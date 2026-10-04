@@ -3,14 +3,22 @@ name: Idea Generator Pipeline
 on:
   workflow_dispatch:
     inputs:
+      entry_point:
+        description: "Точка входа: brainstorm (по умолчанию), seed, signal (скан новостей/сигналов, topic/domain необязательны)"
+        required: false
+        type: choice
+        options: [brainstorm, seed, signal]
+        default: brainstorm
       topic:
-        description: "Тема идеи"
-        required: true
+        description: "Тема идеи (обязательна, кроме entry_point=signal)"
+        required: false
         type: string
+        default: ""
       domain:
-        description: "Домен / индустрия"
-        required: true
+        description: "Домен / индустрия (обязателен, кроме entry_point=signal)"
+        required: false
         type: string
+        default: ""
       constraints:
         description: "Ограничения (бюджет, юрисдикция, сроки)"
         required: false
@@ -62,6 +70,7 @@ jobs:
       DOMAIN: ${{ inputs.domain }}
       CONSTRAINTS: ${{ inputs.constraints }}
       SEED_IDEA: ${{ inputs.seed_idea }}
+      ENTRY_POINT: ${{ inputs.entry_point }}
       CONTINUE_RUN_ID: ${{ inputs.continue_run_id || '' }}
       RUN_ID: ${{ inputs.continue_run_id || format('{0}-{1}', github.run_id, github.run_attempt) }}
       HITL_DECISION: ${{ inputs.hitl_decision || '' }}
