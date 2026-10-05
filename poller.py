@@ -17,6 +17,7 @@ from orchestrator.qdrant_store import (
     update_task,
     append_event,
 )
+from decisions import get_latest_decision
 from github_client import (
     create_workflow_dispatch,
     get_issue,
@@ -77,6 +78,10 @@ def dispatch_pending() -> None:
             "domain": task.get("domain", ""),
             "constraints": task.get("constraints", ""),
         }
+        if task.get("entry_point") == "signal":
+            # topic/domain may be empty for a signal run (private decision 0021);
+            # brainstorm stays the workflow default, seed can't be replayed (no seed text on the task).
+            inputs["entry_point"] = "signal"
         try:
             create_workflow_dispatch(WORKFLOW_FILE, WORKFLOW_REF, inputs)
         except Exception as exc:
@@ -93,45 +98,6 @@ def dispatch_pending() -> None:
                 "status": "failed",
                 "payload": {"task_id": task_id, "error": str(exc)},
             })
-
-
-# Order matters: "NO-GO" contains the word GO, so it must be tested first --
-# with GO first, a NO-GO comment was recorded as GO (found 2026-10-04).
-_DECISION_PATTERNS = [
-    (r"\bCONFIRM\b", "CONFIRM"),
-    (r"\bDISPUTE\b", "DISPUTE"),
-    (r"\bNO[\s-]?GO\b", "NO-GO"),
-    (r"\bGO\b", "GO"),
-]
-_LEADING_DECISION = re.compile(r"^\W*(CONFIRM|DISPUTE|NO[\s-]?GO|GO)\b", re.IGNORECASE)
-
-
-def _parse_decision(body: str) -> str | None:
-    """A comment's first word wins ("GO -- despite the NO-GO risk" is GO);
-    otherwise the first pattern found anywhere in the text."""
-    for line in body.splitlines():
-        if line.strip():
-            m = _LEADING_DECISION.match(line)
-            if m:
-                word = m.group(1).upper()
-                return "NO-GO" if word.startswith("NO") else word
-            break
-    for pattern, decision in _DECISION_PATTERNS:
-        if re.search(pattern, body, re.IGNORECASE):
-            return decision
-    return None
-
-
-def _get_latest_decision(comments: list[dict[str, Any]]) -> str | None:
-    latest_decision = None
-    latest_date = None
-    for comment in comments:
-        decision = _parse_decision(comment.get("body", ""))
-        created_at = comment.get("created_at", "")
-        if decision and (latest_date is None or created_at > latest_date):
-            latest_date = created_at
-            latest_decision = decision
-    return latest_decision
 
 
 def _close_with_result_comment(issue_number: int | None, repo: str | None, emoji: str, decision: str, status: str) -> None:
@@ -358,7 +324,7 @@ def poll_hitl_issues() -> None:
         except Exception:
             continue
 
-        decision = _get_latest_decision(comments)
+        decision = get_latest_decision(comments)
         if decision:
             process_hitl_decision(task, decision, hitl_stage, issue_number=issue_number, repo=repo)
             continue
