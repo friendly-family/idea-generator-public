@@ -1,9 +1,14 @@
 name: Tests
 
+# The private repo has no workflows (private decision 0001), so its orchestrator tests run
+# here: on every public push/PR, on demand, and daily (catches private-repo changes).
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * *"
 
 permissions:
   contents: read
@@ -11,11 +16,26 @@ permissions:
 jobs:
   unit:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout private repo
+        uses: actions/checkout@v4
+        with:
+          repository: friendly-family/idea-generator-private
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          path: private
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install dependencies
+        run: pip install requests pyyaml python-dotenv jsonschema
       - name: Decision parser tests
         run: python test_decisions.py
+      - name: Orchestrator tests (private repo)
+        working-directory: private
+        run: |
+          for t in test_signal test_notify test_repairs test_finance test_funnel_stats; do
+            echo "== $t"
+            python -m orchestrator.$t
+          done
